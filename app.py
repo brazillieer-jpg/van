@@ -54,8 +54,7 @@ TEXT:
 {text}
 """
 
-            url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent"
-
+            url = "https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent"
 
             try:
                 res = requests.post(
@@ -98,4 +97,5 @@ TEXT:
             else:
                 st.success(f"Found {len(records)} valid records")
                 st.table(records)
+
 
