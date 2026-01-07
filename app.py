@@ -8,7 +8,7 @@ st.set_page_config(page_title="TXT Football Data Validator", layout="centered")
 st.title("TXT Football Data Validator (AI)")
 st.write("① Paste Gemini API Key → ② Upload TXT → ③ Analyze")
 
-# ---------- API KEY INPUT (UI မှာထည့်) ----------
+# ---------- API KEY INPUT (UI) ----------
 api_key = st.text_input(
     "Gemini API Key",
     type="password",
@@ -19,12 +19,13 @@ if not api_key:
     st.info("Please enter your Gemini API key to continue.")
     st.stop()
 
-# ---------- Configure Gemini ----------
+# ---------- Configure Gemini (CORRECT WAY) ----------
 try:
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel("models/gemini-1.5-flash")
+    model = genai.GenerativeModel("gemini-pro")  # ✅ IMPORTANT
 except Exception as e:
     st.error("Failed to initialize Gemini model")
+    st.text(str(e))
     st.stop()
 
 # ---------- File Upload ----------
