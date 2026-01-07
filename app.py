@@ -1,90 +1,108 @@
 import streamlit as st
-import google.generativeai as genai
-import json
+import pandas as pd
 import re
 
-# ---------- Page ----------
-st.set_page_config(page_title="TXT Football Data Validator", layout="centered")
-st.title("TXT Football Data Validator (AI)")
-st.write("① Paste Gemini API Key → ② Upload TXT → ③ Analyze")
+# ---------------- Page ----------------
+st.set_page_config(page_title="TXT Football Data Validator", layout="wide")
+st.title("TXT Football Data Validator (NO AI)")
+st.caption("Rule-based • Stable • No API")
 
-# ---------- API KEY INPUT ----------
-api_key = st.text_input(
-    "Gemini API Key",
-    type="password",
-    placeholder="AIzaSyxxxxxxxxxxxxxxxxxxxx"
-)
-
-if not api_key:
-    st.info("Please enter your Gemini API key to continue.")
-    st.stop()
-
-# ---------- Configure Gemini (STABLE) ----------
-try:
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel("gemini-1.0-pro")  # ✅ ONLY THIS
-except Exception as e:
-    st.error("Failed to initialize Gemini model")
-    st.text(str(e))
-    st.stop()
-
-# ---------- File Upload ----------
+# ---------------- Upload ----------------
 uploaded = st.file_uploader("Upload TXT file", type=["txt"])
 
-# ---------- Helper ----------
-def extract_json(text: str):
-    match = re.search(r'\{[\s\S]*\}', text)
-    return match.group(0) if match else None
+# ---------------- Helpers ----------------
+TEAM_MAP = {
+    "ဘာစီ": "Barcelona",
+    "ဘာစီလိုနာ": "Barcelona",
+    "barcelona": "Barcelona",
+    "မန်ယူ": "Manchester United",
+    "man united": "Manchester United",
+    "manchester united": "Manchester United",
+    "မန်စီးတီး": "Manchester City",
+    "man city": "Manchester City",
+    "liverpool": "Liverpool",
+    "လီဗာပူး": "Liverpool",
+    "arsenal": "Arsenal",
+    "အာဆင်နယ်": "Arsenal",
+    "tottenham": "Tottenham Hotspur",
+    "စပါး": "Tottenham Hotspur",
+    "aston villa": "Aston Villa",
+    "ဗီလာ": "Aston Villa",
+    "brighton": "Brighton",
+    "ဘရိုက်တန်": "Brighton",
+    "sevilla": "Sevilla",
+    "newcastle": "Newcastle United",
+    "real madrid": "Real Madrid",
+    "ဗီလာရီရဲလ်": "Villarreal",
+}
 
-# ---------- Main ----------
+def normalize_team(word):
+    w = word.lower().strip()
+    for k, v in TEAM_MAP.items():
+        if k in w:
+            return v
+    return None
+
+def extract_phone(text):
+    nums = re.findall(r'(?:\+?959|09)\d{7,9}', text)
+    if not nums:
+        return None
+    return re.sub(r'\D', '', nums[0])
+
+# ---------------- Main ----------------
 if uploaded:
-    text = uploaded.read().decode("utf-8", errors="ignore")
+    raw = uploaded.read().decode("utf-8", errors="ignore")
+    lines = [l.strip() for l in raw.splitlines() if l.strip()]
 
-    if st.button("Analyze"):
-        with st.spinner("Analyzing with AI..."):
-            prompt = f"""
-Return ONLY valid JSON. No explanation. No markdown.
+    records = []
+    current_name = None
+    current_teams = []
+    current_phone = None
 
-Schema:
-{{
-  "records": [
-    {{"name": "", "football_team": "", "phone": ""}}
-  ]
-}}
+    for line in lines:
+        phone = extract_phone(line)
+        if phone:
+            current_phone = phone
 
-Rules:
-- name, football_team, phone are required
-- missing or invalid → discard
-- phone = digits only (keep country code if exists)
+        teams_found = []
+        for word in re.split(r"[,\|\-/ ]+", line):
+            t = normalize_team(word)
+            if t:
+                teams_found.append(t)
 
-TEXT:
-{text}
-"""
+        if teams_found:
+            current_teams.extend(teams_found)
 
-            try:
-                response = model.generate_content(prompt)
-                raw_text = response.text
-            except Exception as e:
-                st.error("Gemini API call failed")
-                st.text(str(e))
-                st.stop()
+        # name heuristic
+        if not phone and not teams_found and len(line) < 40:
+            current_name = line
 
-            json_text = extract_json(raw_text)
+        # finalize record
+        if current_phone and len(set(current_teams)) >= 5:
+            records.append({
+                "Name": current_name or "Unknown",
+                "Phone": current_phone,
+                "Teams": ", ".join(sorted(set(current_teams)))
+            })
+            current_name = None
+            current_teams = []
+            current_phone = None
 
-            if not json_text:
-                st.error("AI did not return valid JSON")
-                st.text(raw_text)
-                st.stop()
+    if not records:
+        st.error("No valid records found")
+        st.stop()
 
-            try:
-                records = json.loads(json_text).get("records", [])
-            except Exception:
-                st.error("JSON parse failed")
-                st.text(json_text)
-                st.stop()
+    df = pd.DataFrame(records)
+    df = df.drop_duplicates(subset=["Phone"])
 
-            if not records:
-                st.warning("No valid records found")
-            else:
-                st.success(f"Found {len(records)} valid records")
-                st.table(records)
+    st.success(f"Valid records: {len(df)}")
+    st.dataframe(df, use_container_width=True)
+
+    # ---------------- Download ----------------
+    csv = df.to_csv(index=False).encode("utf-8-sig")
+    st.download_button(
+        "Download CSV",
+        csv,
+        "football_validated.csv",
+        "text/csv"
+    )
