@@ -1,16 +1,14 @@
 import streamlit as st
-import requests
+import google.generativeai as genai
 import json
 import re
 
 # ---------- Page ----------
 st.set_page_config(page_title="TXT Football Data Validator", layout="centered")
 st.title("TXT Football Data Validator (AI)")
+st.write("① Paste Gemini API Key → ② Upload TXT → ③ Analyze")
 
-st.write("Step 1️⃣ : Paste your Gemini API Key")
-st.write("Step 2️⃣ : Upload TXT file and click Analyze")
-
-# ---------- API KEY INPUT (ဒီနေရာပဲ သင်တောင်းထားတာ) ----------
+# ---------- API KEY INPUT (UI မှာထည့်) ----------
 api_key = st.text_input(
     "Gemini API Key",
     type="password",
@@ -21,6 +19,14 @@ if not api_key:
     st.info("Please enter your Gemini API key to continue.")
     st.stop()
 
+# ---------- Configure Gemini ----------
+try:
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel("models/gemini-1.5-flash")
+except Exception as e:
+    st.error("Failed to initialize Gemini model")
+    st.stop()
+
 # ---------- File Upload ----------
 uploaded = st.file_uploader("Upload TXT file", type=["txt"])
 
@@ -29,7 +35,7 @@ def extract_json(text: str):
     match = re.search(r'\{[\s\S]*\}', text)
     return match.group(0) if match else None
 
-# ---------- Main Logic ----------
+# ---------- Main ----------
 if uploaded:
     text = uploaded.read().decode("utf-8", errors="ignore")
 
@@ -48,36 +54,20 @@ Schema:
 Rules:
 - name, football_team, phone are required
 - missing or invalid → discard
-- phone = digits only
+- phone = digits only (keep country code if exists)
 
 TEXT:
 {text}
 """
 
-            url = "https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent"
-
             try:
-                res = requests.post(
-                    url,
-                    params={"key": api_key},
-                    headers={"Content-Type": "application/json"},
-                    json={
-                        "contents": [
-                            {"parts": [{"text": prompt}]}
-                        ]
-                    },
-                    timeout=60,
-                )
+                response = model.generate_content(prompt)
+                raw_text = response.text
             except Exception as e:
-                st.error(f"Network error: {e}")
+                st.error("Gemini API call failed")
+                st.text(str(e))
                 st.stop()
 
-            if res.status_code != 200:
-                st.error(f"Gemini API error ({res.status_code})")
-                st.json(res.json())
-                st.stop()
-
-            raw_text = res.json()["candidates"][0]["content"]["parts"][0]["text"]
             json_text = extract_json(raw_text)
 
             if not json_text:
@@ -87,7 +77,7 @@ TEXT:
 
             try:
                 records = json.loads(json_text).get("records", [])
-            except:
+            except Exception:
                 st.error("JSON parse failed")
                 st.text(json_text)
                 st.stop()
@@ -97,5 +87,3 @@ TEXT:
             else:
                 st.success(f"Found {len(records)} valid records")
                 st.table(records)
-
-
