@@ -8,7 +8,7 @@ st.set_page_config(page_title="TXT Football Data Validator", layout="centered")
 st.title("TXT Football Data Validator (AI)")
 st.write("① Paste Gemini API Key → ② Upload TXT → ③ Analyze")
 
-# ---------- API KEY INPUT (UI) ----------
+# ---------- API KEY INPUT ----------
 api_key = st.text_input(
     "Gemini API Key",
     type="password",
@@ -19,10 +19,10 @@ if not api_key:
     st.info("Please enter your Gemini API key to continue.")
     st.stop()
 
-# ---------- Configure Gemini (CORRECT WAY) ----------
+# ---------- Configure Gemini (STABLE) ----------
 try:
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel("gemini-pro")  # ✅ IMPORTANT
+    model = genai.GenerativeModel("gemini-1.0-pro")  # ✅ ONLY THIS
 except Exception as e:
     st.error("Failed to initialize Gemini model")
     st.text(str(e))
