@@ -1,134 +1,92 @@
 import streamlit as st
-import pandas as pd
-import re
+import google.generativeai as genai
+from PIL import Image
 
-# ---------------- Page ----------------
-st.set_page_config(page_title="TXT Football Data Validator", layout="wide")
-st.title("TXT Football Data Validator (NO AI)")
-st.caption("Rule-based • Stable • No API")
+# ---------------- PAGE CONFIG ----------------
+st.set_page_config(
+    page_title="ဘောလုံးစလစ် စစ် AI",
+    page_icon="⚽",
+    layout="centered"
+)
 
-# ---------------- Upload ----------------
-uploaded = st.file_uploader("Upload TXT file", type=["txt"])
-
-# ---------------- Helpers ----------------
-TEAM_MAP = {
-    "ဘာစီ": "Barcelona", "ဘာစီလိုနာ": "Barcelona", "barcelona": "Barcelona",
-    "မန်ယူ": "Manchester United", "man united": "Manchester United",
-    "မန်စီးတီး": "Manchester City", "man city": "Manchester City",
-    "liverpool": "Liverpool", "လီဗာပူး": "Liverpool",
-    "arsenal": "Arsenal", "အာဆင်နယ်": "Arsenal",
-    "tottenham": "Tottenham Hotspur", "စပါး": "Tottenham Hotspur",
-    "aston villa": "Aston Villa", "ဗီလာ": "Aston Villa",
-    "brighton": "Brighton", "ဘရိုက်တန်": "Brighton",
-    "sevilla": "Sevilla",
-    "newcastle": "Newcastle United",
-    "real madrid": "Real Madrid",
-    "villarreal": "Villarreal", "ဗီလာရီရဲလ်": "Villarreal"
+# ---------------- STYLE (Mobile Friendly) ----------------
+st.markdown("""
+<style>
+.block-container {padding-top: 1rem;}
+.match-card {
+    border-radius: 16px;
+    padding: 16px;
+    margin-bottom: 14px;
+    background: #111;
+    border: 1px solid #2a2a2a;
 }
+.win {border-left: 6px solid #16a34a;}
+.loss {border-left: 6px solid #dc2626;}
+.title {font-size: 18px; font-weight: 700;}
+.small {font-size: 14px; opacity: 0.85;}
+</style>
+""", unsafe_allow_html=True)
 
-def normalize_team(word):
-    w = word.lower().strip()
-    for k, v in TEAM_MAP.items():
-        if k in w:
-            return v
-    return None
+# ---------------- HEADER ----------------
+st.title("⚽ ဘောလုံးလောင်းစလစ် စစ် AI")
+st.caption("စလစ်ပုံတင်ပါ → Match တစ်ပွဲချင်း ဘာကြောင့်နိုင် / ဘာကြောင့်ရှုံး ကို မြန်မာလိုရှင်းပြပါမယ်")
 
-def extract_phone(text):
-    m = re.findall(r'(?:\+?959|09)\d{7,9}', text)
-    if not m:
-        return None
-    return re.sub(r'\D', '', m[0])
+# ---------------- GEMINI ----------------
+genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+model = genai.GenerativeModel("gemini-1.5-flash")
 
-# ---------------- Main ----------------
+# ---------------- UPLOAD ----------------
+uploaded = st.file_uploader(
+    "📸 ဘောလုံးလောင်းစလစ် ပုံတင်ပါ",
+    type=["jpg", "jpeg", "png"]
+)
+
 if uploaded:
-    raw = uploaded.read().decode("utf-8", errors="ignore")
-    lines = [l.strip() for l in raw.splitlines() if l.strip()]
+    image = Image.open(uploaded)
+    st.image(image, use_container_width=True)
 
-    valid_records = []
-    no_phone_records = []
-    rejected_records = []
+    if st.button("🔍 စစ်မယ်", use_container_width=True):
+        with st.spinner("AI စစ်နေပါတယ်..."):
+            prompt = """
+ဒီပုံက ဘောလုံး betting slip ဖြစ်ပါတယ်။
 
-    current_name = None
-    current_teams = []
-    current_phone = None
+အောက်ပါအတိုင်း မြန်မာလိုပဲ ထုတ်ပါ။
+Match တစ်ပွဲချင်း ခွဲပြီး JSON မဟုတ်ပဲ Human readable format နဲ့ရေးပါ။
 
-    for line in lines:
-        phone = extract_phone(line)
-        teams_found = []
+လိုအပ်တာ:
+1. Match တစ်ပွဲချင်း
+   - Teams
+   - Bet Type
+   - Odds
+   - Result (နိုင် / ရှုံး / Void)
+2. Match တစ်ပွဲချင်းအတွက်
+   - ❌ ရှုံးရတဲ့အကြောင်း (ရှိရင်)
+   - ✅ နိုင်ရတဲ့အကြောင်း (ရှိရင်)
 
-        for word in re.split(r"[,\|\-/ ]+", line):
-            t = normalize_team(word)
-            if t:
-                teams_found.append(t)
+Format (ဥပမာ):
+MATCH 1:
+Teams:
+Bet Type:
+Odds:
+Result:
 
-        if phone:
-            current_phone = phone
-        if teams_found:
-            current_teams.extend(teams_found)
+Reason:
+- ...
 
-        # Name heuristic
-        if not phone and not teams_found and len(line) < 40:
-            current_name = line
+MATCH 2:
+...
 
-        # Decide record
-        if current_phone and len(set(current_teams)) >= 5:
-            valid_records.append({
-                "Name": current_name or "Unknown",
-                "Phone": current_phone,
-                "Teams": ", ".join(sorted(set(current_teams)))
-            })
-            current_name = None
-            current_teams = []
-            current_phone = None
+မခန့်မှန်းပါနဲ့
+ပုံထဲမှာ မပါတဲ့ Result ကို မထည့်ပါနဲ့
+"""
 
-        elif not current_phone and teams_found:
-            no_phone_records.append({
-                "Name": current_name or "Unknown",
-                "Teams": ", ".join(sorted(set(teams_found))),
-                "Raw Line": line
-            })
+            res = model.generate_content([prompt, image])
 
-        elif current_phone and len(set(current_teams)) < 5:
-            rejected_records.append({
-                "Name": current_name or "Unknown",
-                "Phone": current_phone,
-                "Teams Found": len(set(current_teams)),
-                "Reason": "Less than 5 teams"
-            })
+        st.subheader("🧠 Match တစ်ပွဲချင်း အဖြေ")
+        st.markdown(res.text)
 
-    # ---------------- Display ----------------
-    if valid_records:
-        df_valid = pd.DataFrame(valid_records)
-        st.success(f"✅ Valid records: {len(df_valid)} (Duplicates allowed)")
-        st.dataframe(df_valid, use_container_width=True)
+else:
+    st.info("👆 စလစ်ပုံတင်ပြီး စစ်နိုင်ပါတယ်")
 
-        st.download_button(
-            "⬇ Download VALID CSV",
-            df_valid.to_csv(index=False).encode("utf-8-sig"),
-            "valid_records.csv",
-            "text/csv"
-        )
-
-    if no_phone_records:
-        df_nophone = pd.DataFrame(no_phone_records)
-        st.warning(f"📵 No-phone records: {len(df_nophone)}")
-        st.dataframe(df_nophone, use_container_width=True)
-
-        st.download_button(
-            "⬇ Download NO-PHONE CSV",
-            df_nophone.to_csv(index=False).encode("utf-8-sig"),
-            "no_phone_records.csv",
-            "text/csv"
-        )
-
-    if rejected_records:
-        df_reject = pd.DataFrame(rejected_records)
-        st.error(f"❌ Rejected records: {len(df_reject)}")
-        st.dataframe(df_reject, use_container_width=True)
-
-        st.download_button(
-            "⬇ Download REJECTED CSV",
-            df_reject.to_csv(index=False).encode("utf-8-sig"),
-            "rejected_records.csv",
-            "text/csv"
-        )
+st.markdown("---")
+st.caption("📱 ဖုန်းနဲ့အသုံးပြုရအဆင်ပြေအောင် ဒီဇိုင်းလုပ်ထားပါတယ်")
